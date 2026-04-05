@@ -24,6 +24,8 @@ from app.config import Settings
 
 logging.basicConfig(level=logging.INFO)
 
+TELEGRAM_MESSAGE_MAX_CHARS = 4096
+
 
 def build_router(
     memory: ConversationMemory,
@@ -123,7 +125,13 @@ def build_router(
             lines.append(f'<a href="tg://user?id={uid}">{uid}</a>')
 
         text = "Разрешенные пользователи (до 50):\n" + "\n".join(lines)
-        await call.message.answer(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        # Telegram ограничивает длину сообщения (4096 символов).
+        for part in _split_text(text, TELEGRAM_MESSAGE_MAX_CHARS):
+            await call.message.answer(
+                part,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
         await call.answer()
 
     def _parse_user_id(text: str) -> int | None:
@@ -201,12 +209,56 @@ def build_router(
             final_text = await ai_client.chat_response(history)
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
-        await message.answer(final_text, parse_mode="Markdown")
+        for part in _split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
+            await message.answer(part, parse_mode="Markdown")
 
         await memory.append(user_id, "assistant", final_text)
 
     return router
 
+def _split_text(text: str, max_chars: int) -> list[str]:
+    """
+    Telegram: max message length is 4096 symbols.
+    This is a best-effort splitter that prefers breaking on newline/space
+    to reduce the chance of breaking Markdown entities.
+    """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be > 0")
+
+    text = text or ""
+    if len(text) <= max_chars:
+        return [text]
+
+    parts: list[str] = []
+    start = 0
+    n = len(text)
+
+    while start < n:
+        end = min(start + max_chars, n)
+        if end >= n:
+            parts.append(text[start:end])
+            break
+
+        chunk = text[start:end]
+        # Prefer newline, then space, then hard cut.
+        nl = chunk.rfind("\n")
+        if nl != -1 and nl >= int(max_chars * 0.5):
+            cut = nl + 1  # include newline
+            parts.append(text[start : start + cut])
+            start = start + cut
+            continue
+
+        sp = chunk.rfind(" ")
+        if sp != -1 and sp >= int(max_chars * 0.5):
+            cut = sp + 1  # include space
+            parts.append(text[start : start + cut])
+            start = start + cut
+            continue
+
+        parts.append(chunk)
+        start = end
+
+    return parts
 
 async def main() -> None:
     settings = get_settings()
