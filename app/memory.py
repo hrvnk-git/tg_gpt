@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List
+
+from redis.asyncio import Redis
+
+from .config import Settings
+
+
+class ConversationMemory:
+    def __init__(self, redis: Redis, settings: Settings) -> None:
+        self._redis = redis
+        self._settings = settings
+
+    def _key(self, user_id: int) -> str:
+        return f"chat:{user_id}:history"
+
+    def _summary_key(self, user_id: int) -> str:
+        return f"chat:{user_id}:summary"
+
+    async def get_history(self, user_id: int) -> List[Dict[str, Any]]:
+        stored = await self.get_stored_history(user_id)
+        summary = await self.get_summary(user_id)
+
+        stored_system = stored[0]
+        messages = stored[1:]
+
+        system_prompt = stored_system.get("content", self._settings.system_prompt)
+        if summary.strip():
+            system_prompt = f"{self._settings.system_prompt}\n\nConversation summary:\n{summary}"
+        else:
+            system_prompt = self._settings.system_prompt
+
+        trimmed_messages = self._trim_messages(messages, self._settings.history_max_messages)
+        return [{"role": "system", "content": system_prompt}, *trimmed_messages]
+
+    async def get_stored_history(self, user_id: int) -> List[Dict[str, Any]]:
+        key = self._key(user_id)
+        data = await self._redis.get(key)
+        if not data:
+            return self._initial_history()
+        try:
+            history = json.loads(data)
+        except json.JSONDecodeError:
+            history = self._initial_history()
+        return self._ensure_system_prompt(history)
+
+    async def get_summary(self, user_id: int) -> str:
+        data = await self._redis.get(self._summary_key(user_id))
+        if not data:
+            return ""
+        return str(data)
+
+    async def append(self, user_id: int, role: str, content: str) -> None:
+        # append работает с хранимой (широкой) историей, чтобы у нас было что суммировать.
+        history = await self.get_stored_history(user_id)
+        history.append({"role": role, "content": content})
+        trimmed = self._trim_history(history)
+        encoded = json.dumps(trimmed)
+        await self._redis.set(
+            self._key(user_id),
+            encoded,
+            ex=self._settings.redis_history_ttl,
+        )
+
+    async def reset(self, user_id: int) -> None:
+        await self._redis.delete(self._key(user_id))
+        await self._redis.delete(self._summary_key(user_id))
+
+    async def set_summary(self, user_id: int, summary: str) -> None:
+        summary = summary.strip()
+        if not summary:
+            return
+        await self._redis.set(
+            self._summary_key(user_id),
+            summary[: self._settings.summary_max_chars],
+            ex=self._settings.redis_history_ttl,
+        )
+
+    async def set_recent_history(
+        self, user_id: int, recent_messages: List[Dict[str, Any]]
+    ) -> None:
+        # recent_messages должны быть без system-элемента (только user/assistant).
+        payload = [{"role": "system", "content": self._settings.system_prompt}, *recent_messages]
+        await self._redis.set(
+            self._key(user_id),
+            json.dumps(payload),
+            ex=self._settings.redis_history_ttl,
+        )
+
+    def _trim_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        system, messages = history[0], history[1:]
+        max_len = self._settings.history_store_messages
+        return [system, *self._trim_messages(messages, max_len)]
+
+    def _trim_messages(
+        self, messages: List[Dict[str, Any]], max_len: int
+    ) -> List[Dict[str, Any]]:
+        if len(messages) <= max_len:
+            return messages
+        return messages[-max_len:]
+
+    def _initial_history(self) -> List[Dict[str, Any]]:
+        return [{"role": "system", "content": self._settings.system_prompt}]
+
+    def _ensure_system_prompt(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not history:
+            return self._initial_history()
+        if history[0].get("role") != "system":
+            history.insert(0, self._initial_history()[0])
+        else:
+            history[0]["content"] = self._settings.system_prompt
+        return history
