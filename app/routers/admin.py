@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -100,7 +101,7 @@ def create_admin_router(access: AccessControl) -> Router:
         for part in split_text(text, TELEGRAM_MESSAGE_MAX_CHARS):
             await call.message.answer(
                 part,
-                parse_mode="Markdown"
+                parse_mode=ParseMode.MARKDOWN_V2
             )
         await call.answer()
 

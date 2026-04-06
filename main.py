@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from aiogram.enums import ParseMode
+from anyio.functools import P
 import redis.asyncio as redis
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -32,7 +34,7 @@ async def main() -> None:
 
     bot = Bot(
         token=settings.telegram_token,
-        default=DefaultBotProperties(parse_mode="Markdown"),
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2)
     )
     dp = Dispatcher()
 
