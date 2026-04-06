@@ -158,7 +158,9 @@ class OpenAIClient:
                 parts: List[Dict[str, Any]] = []
                 if content_text.strip():
                     parts.append({"type": "input_text", "text": content_text})
-                parts.append({"type": "input_image", "image_url": {"url": image_data_url}})
+                # For Responses API vision input, `image_url` must be a string
+                # (fully-qualified URL or base64 data URL).
+                parts.append({"type": "input_image", "image_url": image_data_url})
                 payload.append({"role": role, "content": parts})
             else:
                 payload.append(
