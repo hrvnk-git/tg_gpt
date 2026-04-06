@@ -53,26 +53,37 @@ def split_text(text: str, max_chars: int = TELEGRAM_MESSAGE_MAX_CHARS) -> list[s
 
 
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+_BOLD_RE = re.compile(r"\*\*([^\*\n]+)\*\*")
+
 # Supports both:
 # - ```\ncode\n```
 # - ```lang\ncode\n```
 _FENCED_CODE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```", re.MULTILINE)
 
 
-def _escape_inline_code(text: str) -> str:
+_INLINE_FEATURES_RE = re.compile(r"`([^`]+)`|\*\*([^\*\n]+)\*\*")
+
+
+def _render_inline_features(text: str) -> str:
     """
-    Escape text for Telegram HTML parse_mode, and convert `inline code` to <code>.
+    Escape text for Telegram HTML parse_mode, and convert:
+    - `inline code` -> <code>...</code>
+    - **bold** -> <b>...</b>
     """
-    # We escape everything first, but we need to insert <code> tags around the raw
-    # inline-code content, so we work on raw slices.
     parts: list[str] = []
     pos = 0
-    for match in _INLINE_CODE_RE.finditer(text):
+    for match in _INLINE_FEATURES_RE.finditer(text):
         start, end = match.span()
         parts.append(_html.escape(text[pos:start], quote=True))
-        code_raw = match.group(1)
-        parts.append(f"<code>{_html.escape(code_raw, quote=True)}</code>")
+
+        inline_code_raw = match.group(1)
+        bold_raw = match.group(2)
+        if inline_code_raw is not None:
+            parts.append(f"<code>{_html.escape(inline_code_raw, quote=True)}</code>")
+        elif bold_raw is not None:
+            parts.append(f"<b>{_html.escape(bold_raw, quote=True)}</b>")
         pos = end
+
     parts.append(_html.escape(text[pos:], quote=True))
     return "".join(parts)
 
@@ -92,7 +103,7 @@ def render_telegram_html(text: str) -> str:
 
     for match in _FENCED_CODE_RE.finditer(text):
         start, end = match.span()
-        out.append(_escape_inline_code(text[pos:start]))
+        out.append(_render_inline_features(text[pos:start]))
         code_raw = match.group(1)
         out.append(
             "<pre><code>"
@@ -101,5 +112,5 @@ def render_telegram_html(text: str) -> str:
         )
         pos = end
 
-    out.append(_escape_inline_code(text[pos:]))
+    out.append(_render_inline_features(text[pos:]))
     return "".join(out)
