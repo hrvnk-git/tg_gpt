@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
@@ -189,3 +190,41 @@ class OpenAIClient:
                 return maybe.strip()[:4096]
 
         return ""
+
+    async def transcribe_audio(
+        self,
+        audio_bytes: bytes,
+        *,
+        filename: str = "audio.ogg",
+        model: str = "gpt-4o-mini-transcribe",
+        language: str | None = None,
+    ) -> str:
+        """
+        Speech-to-text using the Audio Transcriptions endpoint.
+
+        Returns plain text transcription.
+        """
+        if not audio_bytes:
+            return ""
+
+        audio_file = io.BytesIO(audio_bytes)
+        # The OpenAI SDK uses `name` to infer extension/content handling.
+        audio_file.name = filename
+
+        # Docs examples return an object with `.text` when response_format="text".
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "file": audio_file,
+            "response_format": "text",
+        }
+        if language:
+            # Optional hint for transcription quality.
+            kwargs["language"] = language
+
+        resp = await self._client.audio.transcriptions.create(**kwargs)
+        text = getattr(resp, "text", None)
+        if isinstance(text, str):
+            return text.strip()
+        # Fallback if SDK structure differs.
+        maybe = str(resp).strip()
+        return maybe
