@@ -237,7 +237,7 @@ def build_router(
             safe_part = html.escape(part, quote=True)
             await message.answer(
                 safe_part,
-                parse_mode=ParseMode.HTML,
+                parse_mode=ParseMode.MARKDOWN,
                 disable_web_page_preview=True,
             )
 
@@ -302,7 +302,7 @@ async def main() -> None:
 
     bot = Bot(
         token=settings.telegram_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
     dp = Dispatcher()
     dp.include_router(
