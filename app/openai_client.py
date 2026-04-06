@@ -113,3 +113,77 @@ class OpenAIClient:
                 return maybe.strip()[:4096]
 
         return ""
+
+    async def chat_response_with_image(
+        self,
+        messages: List[Dict[str, Any]],
+        image_data_url: str,
+        model: str = "gpt-5.4-nano",
+        temperature: float = 0.6,
+    ) -> str:
+        """
+        Generate a response conditioned on the provided image.
+
+        The image is attached to the last `user` message in `messages` by replacing
+        that message's content with both:
+        - input_text (the message text)
+        - input_image (the image_data_url)
+        """
+        if not messages:
+            return "🤖 Мне нечего добавить"
+
+        last_user_idx: int | None = None
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "user":
+                last_user_idx = i
+
+        payload: List[Dict[str, Any]] = []
+        for i, msg in enumerate(messages):
+            role = msg.get("role")
+            content_text = msg.get("content", "") or ""
+
+            if role == "assistant":
+                payload.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "output_text", "text": content_text},
+                        ],
+                    }
+                )
+                continue
+
+            # system/user -> input_text, except last user message where we also add input_image.
+            if role in {"system", "user"} and i == last_user_idx:
+                parts: List[Dict[str, Any]] = []
+                if content_text.strip():
+                    parts.append({"type": "input_text", "text": content_text})
+                parts.append({"type": "input_image", "image_url": {"url": image_data_url}})
+                payload.append({"role": role, "content": parts})
+            else:
+                payload.append(
+                    {
+                        "role": role,
+                        "content": [
+                            {"type": "input_text", "text": content_text},
+                        ],
+                    }
+                )
+
+        resp = await self._client.responses.create(
+            model=model,
+            input=payload,
+            temperature=temperature,
+        )
+
+        text = self._extract_output_text(resp)
+        if text:
+            return text
+
+        # Fallback: sometimes structure can differ.
+        for item in getattr(resp, "output", []) or []:
+            maybe = getattr(item, "text", None)
+            if isinstance(maybe, str) and maybe.strip():
+                return maybe.strip()[:4096]
+
+        return ""
