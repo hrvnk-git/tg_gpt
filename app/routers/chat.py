@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import html
-
 from aiogram import F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
@@ -16,7 +14,7 @@ from app.openai_client import OpenAIClient
 from app.rate_limiter import RateLimiter
 
 from .admin import AdminStates
-from .utils import TELEGRAM_MESSAGE_MAX_CHARS, split_text
+from .utils import TELEGRAM_MESSAGE_MAX_CHARS, render_telegram_html, split_text
 
 
 def create_chat_router(
@@ -115,10 +113,9 @@ def create_chat_router(
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
         for part in split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
-            safe_part = html.escape(part, quote=True)
             await message.answer(
-                safe_part,
-                parse_mode=ParseMode.HTML
+                render_telegram_html(part),
+                parse_mode=ParseMode.HTML,
             )
 
         await memory.append(user_id, "assistant", final_text)

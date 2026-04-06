@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.access_control import AccessControl
 
-from .utils import TELEGRAM_MESSAGE_MAX_CHARS, split_text
+from .utils import TELEGRAM_MESSAGE_MAX_CHARS, render_telegram_html, split_text
 
 
 class AdminStates(StatesGroup):
@@ -69,7 +69,10 @@ def create_admin_router(access: AccessControl) -> Router:
             return
 
         await state.set_state(AdminStates.waiting_for_add_user_id)
-        await call.message.answer("Отправь `user_id` (число), которого добавить:")
+        await call.message.answer(
+            render_telegram_html("Отправь `user_id` (число), которого добавить:"),
+            parse_mode=ParseMode.HTML,
+        )
         await call.answer()
 
     @router.callback_query(F.data == "admin:remove")
@@ -79,7 +82,10 @@ def create_admin_router(access: AccessControl) -> Router:
             return
 
         await state.set_state(AdminStates.waiting_for_remove_user_id)
-        await call.message.answer("Отправь `user_id` (число), которого удалить:")
+        await call.message.answer(
+            render_telegram_html("Отправь `user_id` (число), которого удалить:"),
+            parse_mode=ParseMode.HTML,
+        )
         await call.answer()
 
     @router.callback_query(F.data == "admin:list")
@@ -114,11 +120,17 @@ def create_admin_router(access: AccessControl) -> Router:
 
         user_id = _parse_user_id(message.text or "")
         if user_id is None:
-            await message.answer("Нужно число. Например: `123456`")
+            await message.answer(
+                render_telegram_html("Нужно число. Например: `123456`"),
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         await access.add_allowed_user(user_id)
-        await message.answer(f"Пользователь `{user_id}` добавлен.")
+        await message.answer(
+            render_telegram_html(f"Пользователь `{user_id}` добавлен."),
+            parse_mode=ParseMode.HTML,
+        )
         await state.clear()
 
     @router.message(StateFilter(AdminStates.waiting_for_remove_user_id))
@@ -130,12 +142,17 @@ def create_admin_router(access: AccessControl) -> Router:
 
         user_id = _parse_user_id(message.text or "")
         if user_id is None:
-            await message.answer("Нужно число. Например: `123456`")
+            await message.answer(
+                render_telegram_html("Нужно число. Например: `123456`"),
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         await access.remove_allowed_user(user_id)
-        await message.answer(f"Пользователь `{user_id}` удалён.")
+        await message.answer(
+            render_telegram_html(f"Пользователь `{user_id}` удалён."),
+            parse_mode=ParseMode.HTML,
+        )
         await state.clear()
 
     return router
-
