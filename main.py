@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -95,7 +96,7 @@ def build_router(
             await call.answer("Доступ запрещен.", show_alert=True)
             return
         await state.set_state(AdminStates.waiting_for_add_user_id)
-        await call.message.answer("Отправь `user_id` (число), которого добавить:", parse_mode="Markdown")
+        await call.message.answer("Отправь `user_id` (число), которого добавить:")
         await call.answer()
 
     @router.callback_query(F.data == "admin:remove")
@@ -104,7 +105,7 @@ def build_router(
             await call.answer("Доступ запрещен.", show_alert=True)
             return
         await state.set_state(AdminStates.waiting_for_remove_user_id)
-        await call.message.answer("Отправь `user_id` (число), которого удалить:", parse_mode="Markdown")
+        await call.message.answer("Отправь `user_id` (число), которого удалить:")
         await call.answer()
 
     @router.callback_query(F.data == "admin:list")
@@ -152,10 +153,10 @@ def build_router(
             return
         user_id = _parse_user_id(message.text or "")
         if user_id is None:
-            await message.answer("Нужно число. Например: `123456`", parse_mode="Markdown")
+            await message.answer("Нужно число. Например: `123456`")
             return
         await access.add_allowed_user(user_id)
-        await message.answer(f"Пользователь `{user_id}` добавлен.", parse_mode="Markdown")
+        await message.answer(f"Пользователь `{user_id}` добавлен.")
         await state.clear()
 
     @router.message(StateFilter(AdminStates.waiting_for_remove_user_id))
@@ -166,14 +167,22 @@ def build_router(
             return
         user_id = _parse_user_id(message.text or "")
         if user_id is None:
-            await message.answer("Нужно число. Например: `123456`", parse_mode="Markdown")
+            await message.answer("Нужно число. Например: `123456`")
             return
         await access.remove_allowed_user(user_id)
-        await message.answer(f"Пользователь `{user_id}` удалён.", parse_mode="Markdown")
+        await message.answer(f"Пользователь `{user_id}` удалён.")
         await state.clear()
 
     @router.message(F.text & ~F.text.startswith("/"))
-    async def handle_message(message: Message) -> None:
+    async def handle_message(message: Message, state: FSMContext) -> None:
+        current_state = await state.get_state()
+        if current_state in {
+            AdminStates.waiting_for_add_user_id.state,
+            AdminStates.waiting_for_remove_user_id.state,
+        }:
+            # Don't let the generic handler clobber FSM admin input.
+            return
+
         user_id = message.from_user.id
         if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
@@ -202,7 +211,7 @@ def build_router(
                 max_summary_chars=settings.summary_max_chars,
             )
             await memory.set_summary(user_id, summary_candidate)
-            await memory.set_recent_history(user_id, recent)
+            recent_for_model = await memory.set_recent_history(user_id, recent)
 
             # Важно: если summary-кандидат пустой — не перетираем Redis summary,
             # но и history должны строиться на основе recent сообщений.
@@ -213,7 +222,7 @@ def build_router(
 
             stored_history_for_model = [
                 {"role": "system", "content": settings.system_prompt},
-                *recent,
+                *recent_for_model,
             ]
             history = memory.build_history(stored_history_for_model, summary_for_model)
         else:
@@ -225,7 +234,12 @@ def build_router(
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
         for part in _split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
-            await message.answer(part, parse_mode="Markdown")
+            safe_part = html.escape(part, quote=True)
+            await message.answer(
+                safe_part,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
 
         await memory.append(user_id, "assistant", final_text)
 
@@ -301,7 +315,6 @@ async def main() -> None:
     finally:
         await bot.session.close()
         await redis_client.close()
-
 
 if __name__ == "__main__":
     try:
