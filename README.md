@@ -25,6 +25,11 @@
    OPENAI_API_KEY=sk-...
    REDIS_URL=redis://localhost:6379/0
    SYSTEM_PROMPT="You are a friendly assistant..."
+   # ALLOWED_USER_IDS:
+   # - empty -> no users allowed (secure default)
+   # - "*"   -> all users are allowed (public mode)
+   # - "123,456" -> explicit allowlist
+   ALLOWED_USER_IDS=
    RATE_LIMIT=5
    RATE_WINDOW_SECONDS=30
    HISTORY_MAX_MESSAGES=20

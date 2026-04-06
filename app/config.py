@@ -51,11 +51,15 @@ class Settings:
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set")
 
-        redis_url = os.getenv("REDIS_URL", cls.redis_url)
-        redis_ttl = int(os.getenv("REDIS_HISTORY_TTL", cls.redis_history_ttl))
-        history_max = int(os.getenv("HISTORY_MAX_MESSAGES", cls.history_max_messages))
+        defaults = cls(telegram_token=token, openai_api_key=api_key)
+
+        redis_url = os.getenv("REDIS_URL", defaults.redis_url)
+        redis_ttl = int(os.getenv("REDIS_HISTORY_TTL", defaults.redis_history_ttl))
+        history_max = int(
+            os.getenv("HISTORY_MAX_MESSAGES", defaults.history_max_messages)
+        )
         history_store = int(
-            os.getenv("HISTORY_STORE_MESSAGES", cls.history_store_messages)
+            os.getenv("HISTORY_STORE_MESSAGES", defaults.history_store_messages)
         )
         summary_trigger_env = os.getenv("SUMMARY_TRIGGER_MESSAGES")
         summary_trigger = (
@@ -63,15 +67,21 @@ class Settings:
             if summary_trigger_env is not None
             else (history_store - history_max)
         )
-        summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", cls.summary_max_chars))
-        rate_limit = int(os.getenv("RATE_LIMIT", cls.rate_limit))
-        rate_window = int(os.getenv("RATE_WINDOW_SECONDS", cls.rate_window_seconds))
-        prompt = os.getenv("SYSTEM_PROMPT", cls.system_prompt)
+        summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", defaults.summary_max_chars))
+        rate_limit = int(os.getenv("RATE_LIMIT", defaults.rate_limit))
+        rate_window = int(
+            os.getenv("RATE_WINDOW_SECONDS", defaults.rate_window_seconds)
+        )
+        prompt = os.getenv("SYSTEM_PROMPT", defaults.system_prompt)
 
         allowed_env = os.getenv("ALLOWED_USER_IDS", "").strip()
-        if not allowed_env or allowed_env == "*":
+        if not allowed_env:
+            # Secure-by-default: if allowlist is empty, deny by default.
+            allow_all_users = False
+            allowed_user_ids = []
+        elif allowed_env == "*":
             allow_all_users = True
-            allowed_user_ids: List[int] = []
+            allowed_user_ids = []
         else:
             allow_all_users = False
             allowed_user_ids = [

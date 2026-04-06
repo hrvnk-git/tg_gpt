@@ -33,7 +33,11 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.message(Command("admin"))
     async def handle_admin(message, state: FSMContext) -> None:
-        if not await access.is_admin(message.from_user.id):
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        if not await access.is_admin(from_user.id):
             await message.answer("Доступ запрещен.")
             return
 
@@ -64,8 +68,17 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.callback_query(F.data == "admin:add")
     async def cb_admin_add(call: CallbackQuery, state: FSMContext) -> None:
-        if not await access.is_admin(call.from_user.id):
+        from_user = call.from_user
+        if from_user is None:
+            await call.answer("Недоступно для этого события.", show_alert=True)
+            return
+
+        if not await access.is_admin(from_user.id):
             await call.answer("Доступ запрещен.", show_alert=True)
+            return
+
+        if call.message is None:
+            await call.answer("Не удалось отправить сообщение.", show_alert=True)
             return
 
         await state.set_state(AdminStates.waiting_for_add_user_id)
@@ -77,8 +90,17 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.callback_query(F.data == "admin:remove")
     async def cb_admin_remove(call: CallbackQuery, state: FSMContext) -> None:
-        if not await access.is_admin(call.from_user.id):
+        from_user = call.from_user
+        if from_user is None:
+            await call.answer("Недоступно для этого события.", show_alert=True)
+            return
+
+        if not await access.is_admin(from_user.id):
             await call.answer("Доступ запрещен.", show_alert=True)
+            return
+
+        if call.message is None:
+            await call.answer("Не удалось отправить сообщение.", show_alert=True)
             return
 
         await state.set_state(AdminStates.waiting_for_remove_user_id)
@@ -90,8 +112,17 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.callback_query(F.data == "admin:list")
     async def cb_admin_list(call: CallbackQuery) -> None:
-        if not await access.is_admin(call.from_user.id):
+        from_user = call.from_user
+        if from_user is None:
+            await call.answer("Недоступно для этого события.", show_alert=True)
+            return
+
+        if not await access.is_admin(from_user.id):
             await call.answer("Доступ запрещен.", show_alert=True)
+            return
+
+        if call.message is None:
+            await call.answer("Не удалось отправить сообщение.", show_alert=True)
             return
 
         allowed = await access.list_allowed_users(limit=50)
@@ -113,7 +144,12 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.message(StateFilter(AdminStates.waiting_for_add_user_id))
     async def add_user_from_state(message, state: FSMContext) -> None:
-        if not await access.is_admin(message.from_user.id):
+        from_user = message.from_user
+        if from_user is None:
+            await state.clear()
+            return
+
+        if not await access.is_admin(from_user.id):
             await message.answer("Доступ запрещен.")
             await state.clear()
             return
@@ -135,7 +171,12 @@ def create_admin_router(access: AccessControl) -> Router:
 
     @router.message(StateFilter(AdminStates.waiting_for_remove_user_id))
     async def remove_user_from_state(message, state: FSMContext) -> None:
-        if not await access.is_admin(message.from_user.id):
+        from_user = message.from_user
+        if from_user is None:
+            await state.clear()
+            return
+
+        if not await access.is_admin(from_user.id):
             await message.answer("Доступ запрещен.")
             await state.clear()
             return

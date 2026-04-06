@@ -17,7 +17,7 @@ from app.openai_client import OpenAIClient
 from app.rate_limiter import RateLimiter
 
 from .admin import AdminStates
-from .utils import TELEGRAM_MESSAGE_MAX_CHARS, render_telegram_html, split_text
+from .utils import TELEGRAM_MESSAGE_MAX_CHARS, render_safe_parts
 
 
 def create_chat_router(
@@ -55,11 +55,16 @@ def create_chat_router(
 
     @router.message(CommandStart())
     async def handle_start(message: Message) -> None:
-        if not await access.is_user_allowed(message.from_user.id):
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        user_id = from_user.id
+        if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
             return
 
-        await memory.reset(message.from_user.id)
+        await memory.reset(user_id)
         await message.answer(
             "Привет! Я GPT-бот. Просто напиши сообщение, и я отвечу.\n"
             "Команда /reset очистит контекст диалога."
@@ -67,11 +72,16 @@ def create_chat_router(
 
     @router.message(Command("reset"))
     async def handle_reset(message: Message) -> None:
-        if not await access.is_user_allowed(message.from_user.id):
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        user_id = from_user.id
+        if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
             return
 
-        await memory.reset(message.from_user.id)
+        await memory.reset(user_id)
         await message.answer("Контекст очищен. Начнём заново!")
 
     @router.message(F.text & ~F.text.startswith("/"))
@@ -84,7 +94,11 @@ def create_chat_router(
             # Don't let the generic handler clobber FSM admin input.
             return
 
-        user_id = message.from_user.id
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        user_id = from_user.id
         if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
             return
@@ -139,9 +153,9 @@ def create_chat_router(
             final_text = await ai_client.chat_response(history)
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
-        for part in split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
+        for part in render_safe_parts(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
             await message.answer(
-                render_telegram_html(part),
+                part,
                 parse_mode=ParseMode.HTML,
             )
 
@@ -157,7 +171,11 @@ def create_chat_router(
             # Don't let the generic handler clobber FSM admin input.
             return
 
-        user_id = message.from_user.id
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        user_id = from_user.id
         if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
             return
@@ -230,9 +248,9 @@ def create_chat_router(
             )
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
-        for part in split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
+        for part in render_safe_parts(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
             await message.answer(
-                render_telegram_html(part),
+                part,
                 parse_mode=ParseMode.HTML,
             )
 
@@ -248,7 +266,11 @@ def create_chat_router(
             # Don't let the generic handler clobber FSM admin input.
             return
 
-        user_id = message.from_user.id
+        from_user = message.from_user
+        if from_user is None:
+            return
+
+        user_id = from_user.id
         if not await access.is_user_allowed(user_id):
             await message.answer("Доступ запрещен.")
             return
@@ -323,9 +345,9 @@ def create_chat_router(
             final_text = await ai_client.chat_response(history)
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
-        for part in split_text(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
+        for part in render_safe_parts(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
             await message.answer(
-                render_telegram_html(part),
+                part,
                 parse_mode=ParseMode.HTML,
             )
 
