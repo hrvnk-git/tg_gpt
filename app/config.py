@@ -22,7 +22,7 @@ class Settings:
     history_store_messages: int = 60
     # Если старых сообщений больше этого порога, генерируем summary и выбрасываем "старое".
     # Если не задан — считаем как (history_store_messages - history_max_messages).
-    summary_trigger_messages: int | None = None
+    summary_trigger_messages: int = 0
     # Ограничение размера summary по символам (чтобы не раздувать токены).
     summary_max_chars: int = 1200
     rate_limit: int = 5
@@ -36,14 +36,10 @@ class Settings:
     allow_all_admins: bool = False
 
     def is_user_allowed(self, user_id: int) -> bool:
-        if self.allow_all_users:
-            return True
-        return user_id in (self.allowed_user_ids or [])
+        return self.allow_all_users or (user_id in (self.allowed_user_ids or []))
 
     def is_admin(self, user_id: int) -> bool:
-        if self.allow_all_admins:
-            return True
-        return user_id in (self.admin_user_ids or [])
+        return self.allow_all_admins or (user_id in (self.admin_user_ids or []))
 
     @classmethod
     def from_env(cls) -> "Settings":

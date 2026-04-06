@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List
 
@@ -19,21 +20,54 @@ class ConversationMemory:
     def _summary_key(self, user_id: int) -> str:
         return f"chat:{user_id}:summary"
 
-    async def get_history(self, user_id: int) -> List[Dict[str, Any]]:
-        stored = await self.get_stored_history(user_id)
-        summary = await self.get_summary(user_id)
+    async def append_and_get_stored_history(
+        self, user_id: int, role: str, content: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Аппендим сообщение в "широкую" историю (с заделом под summary) и возвращаем
+        итоговую trimmed историю (включая system элемент).
+        """
+        history = await self.get_stored_history(user_id)
+        history.append({"role": role, "content": content})
+        trimmed = self._trim_history(history)
+        await self._redis.set(
+            self._key(user_id),
+            json.dumps(trimmed),
+            ex=self._settings.redis_history_ttl,
+        )
+        return trimmed
 
-        stored_system = stored[0]
-        messages = stored[1:]
+    def build_history(
+        self, stored_history: List[Dict[str, Any]], summary: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Собирает payload для модели:
+        - system: базовый system_prompt + при наличии summary добавляет блок summary
+        - messages: обрезка до history_max_messages (только user/assistant)
+        """
+        if not stored_history:
+            stored_history = self._initial_history()
+
+        stored_system = stored_history[0]
+        messages = stored_history[1:]
 
         system_prompt = stored_system.get("content", self._settings.system_prompt)
         if summary.strip():
-            system_prompt = f"{self._settings.system_prompt}\n\nConversation summary:\n{summary}"
+            system_prompt = (
+                f"{self._settings.system_prompt}\n\nConversation summary:\n{summary}"
+            )
         else:
             system_prompt = self._settings.system_prompt
 
         trimmed_messages = self._trim_messages(messages, self._settings.history_max_messages)
         return [{"role": "system", "content": system_prompt}, *trimmed_messages]
+
+    async def get_history(self, user_id: int) -> List[Dict[str, Any]]:
+        stored_history, summary = await asyncio.gather(
+            self.get_stored_history(user_id),
+            self.get_summary(user_id),
+        )
+        return self.build_history(stored_history, summary)
 
     async def get_stored_history(self, user_id: int) -> List[Dict[str, Any]]:
         key = self._key(user_id)

@@ -9,6 +9,14 @@ class OpenAIClient:
     def __init__(self, api_key: str) -> None:
         self._client = AsyncOpenAI(api_key=api_key)
 
+    @staticmethod
+    def _extract_output_text(resp: Any) -> Optional[str]:
+        text: Optional[str] = getattr(resp, "output_text", None)
+        if isinstance(text, str):
+            stripped = text.strip()
+            return stripped or None
+        return None
+
     async def summarize_messages(
         self,
         system_prompt: str,
@@ -52,12 +60,11 @@ class OpenAIClient:
                 {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
             ],
             temperature=temperature,
-            
         )
 
-        text: Optional[str] = getattr(resp, "output_text", None)
-        if isinstance(text, str):
-            return text.strip()[:max_summary_chars]
+        text = self._extract_output_text(resp)
+        if text:
+            return text[:max_summary_chars]
         return ""
 
     async def chat_response(
@@ -94,8 +101,8 @@ class OpenAIClient:
         )
 
         # SDK обычно отдаёт output_text; на случай несовпадения версии — пробуем несколько вариантов.
-        text: Optional[str] = getattr(resp, "output_text", None)
-        if isinstance(text, str) and text.strip():
+        text = self._extract_output_text(resp)
+        if text:
             return text
 
         # Fallback: иногда структура может отличаться.

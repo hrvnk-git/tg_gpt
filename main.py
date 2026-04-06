@@ -185,8 +185,9 @@ def build_router(
             )
             return
 
-        await memory.append(user_id, "user", message.text)
-        stored_history = await memory.get_stored_history(user_id)
+        stored_history = await memory.append_and_get_stored_history(
+            user_id, "user", message.text or ""
+        )
         messages_only = stored_history[1:]
 
         # Если накопилось слишком много старых сообщений — суммируем выбывающую часть.
@@ -195,15 +196,29 @@ def build_router(
             older = messages_only[:cut]
             recent = messages_only[-settings.history_max_messages :]
 
-            summary = await ai_client.summarize_messages(
+            summary_candidate = await ai_client.summarize_messages(
                 system_prompt=settings.system_prompt,
                 messages_to_summarize=older,
                 max_summary_chars=settings.summary_max_chars,
             )
-            await memory.set_summary(user_id, summary)
+            await memory.set_summary(user_id, summary_candidate)
             await memory.set_recent_history(user_id, recent)
 
-        history = await memory.get_history(user_id)
+            # Важно: если summary-кандидат пустой — не перетираем Redis summary,
+            # но и history должны строиться на основе recent сообщений.
+            if summary_candidate.strip():
+                summary_for_model = summary_candidate.strip()
+            else:
+                summary_for_model = await memory.get_summary(user_id)
+
+            stored_history_for_model = [
+                {"role": "system", "content": settings.system_prompt},
+                *recent,
+            ]
+            history = memory.build_history(stored_history_for_model, summary_for_model)
+        else:
+            summary_for_model = await memory.get_summary(user_id)
+            history = memory.build_history(stored_history, summary_for_model)
 
         async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
             final_text = await ai_client.chat_response(history)
