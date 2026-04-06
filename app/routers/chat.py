@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 
 from aiogram import F, Router
-from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
@@ -118,8 +117,7 @@ def create_chat_router(
             safe_part = html.escape(part, quote=True)
             await message.answer(
                 safe_part,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
+                parse_mode="Markdown"
             )
 
         await memory.append(user_id, "assistant", final_text)

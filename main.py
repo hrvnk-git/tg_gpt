@@ -6,7 +6,6 @@ import logging
 import redis.asyncio as redis
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 
 from app.access_control import AccessControl
 from app.config import get_settings
@@ -33,7 +32,7 @@ async def main() -> None:
 
     bot = Bot(
         token=settings.telegram_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        default=DefaultBotProperties(parse_mode="Markdown"),
     )
     dp = Dispatcher()
 
