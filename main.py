@@ -220,7 +220,7 @@ def _split_text(text: str, max_chars: int) -> list[str]:
     """
     Telegram: max message length is 4096 symbols.
     This is a best-effort splitter that prefers breaking on newline/space
-    to reduce the chance of breaking Markdown entities.
+    to reduce the chance of breaking words/entities.
     """
     if max_chars <= 0:
         raise ValueError("max_chars must be > 0")

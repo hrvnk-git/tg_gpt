@@ -86,15 +86,34 @@ class Settings:
 
         admin_env = os.getenv("ADMIN_USER_IDS", "").strip()
         if not admin_env:
-            # по умолчанию админы = allowed_user_ids
-            admin_env = ",".join(str(x) for x in allowed_user_ids)
-
-        if not admin_env or admin_env == "*":
+            # Secure-by-default: если ADMIN_USER_IDS не задан,
+            # не открываем админку для всех.
+            allow_all_admins = False
+            # Удобный безопасный дефолт: в режиме allowlist админы = allowlist.
+            admin_user_ids = allowed_user_ids.copy() if not allow_all_users else []
+        elif admin_env == "*":
             allow_all_admins = True
-            admin_user_ids: List[int] = []
+            admin_user_ids = []
         else:
             allow_all_admins = False
             admin_user_ids = [int(x.strip()) for x in admin_env.split(",") if x.strip()]
+
+        if history_max <= 0:
+            raise RuntimeError("HISTORY_MAX_MESSAGES must be > 0")
+        if history_store < history_max:
+            raise RuntimeError(
+                "HISTORY_STORE_MESSAGES must be >= HISTORY_MAX_MESSAGES"
+            )
+        if summary_trigger < 0:
+            raise RuntimeError("SUMMARY_TRIGGER_MESSAGES must be >= 0")
+        if summary_max_chars <= 0:
+            raise RuntimeError("SUMMARY_MAX_CHARS must be > 0")
+        if redis_ttl <= 0:
+            raise RuntimeError("REDIS_HISTORY_TTL must be > 0")
+        if rate_limit <= 0:
+            raise RuntimeError("RATE_LIMIT must be > 0")
+        if rate_window <= 0:
+            raise RuntimeError("RATE_WINDOW_SECONDS must be > 0")
 
         return cls(
             telegram_token=token,
