@@ -6,3 +6,5 @@ __pycache__
 .vscode/
 .idea/
 .env
+tests/
+tests/test_utils_render_safe_parts.py

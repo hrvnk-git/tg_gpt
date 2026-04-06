@@ -72,16 +72,16 @@ def _find_soft_cut(chunk: str, min_ratio: float = 0.5) -> int | None:
     return None
 
 
-_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
-_BOLD_RE = re.compile(r"\*\*([^\*\n]+)\*\*")
-
 # Supports both:
 # - ```\ncode\n```
 # - ```lang\ncode\n```
 _FENCED_CODE_RE = re.compile(r"```[^\n]*\n([\s\S]*?)```", re.MULTILINE)
 
 
-_INLINE_FEATURES_RE = re.compile(r"`([^`]+)`|\*\*([^\*\n]+)\*\*")
+_INLINE_FEATURES_RE = re.compile(
+    r"`([^`]+)`|\*\*([^\*\n]+)\*\*|(?<!\*)\*([^\*\n]+)\*(?!\*)"
+)
+_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*(.+?)\s*$")
 
 
 def _render_inline_features(text: str) -> str:
@@ -89,6 +89,7 @@ def _render_inline_features(text: str) -> str:
     Escape text for Telegram HTML parse_mode, and convert:
     - `inline code` -> <code>...</code>
     - **bold** -> <b>...</b>
+    - *italic* -> <i>...</i>
     """
     parts: list[str] = []
     pos = 0
@@ -98,14 +99,45 @@ def _render_inline_features(text: str) -> str:
 
         inline_code_raw = match.group(1)
         bold_raw = match.group(2)
+        italic_raw = match.group(3)
         if inline_code_raw is not None:
             parts.append(f"<code>{_html.escape(inline_code_raw, quote=True)}</code>")
         elif bold_raw is not None:
             parts.append(f"<b>{_html.escape(bold_raw, quote=True)}</b>")
+        elif italic_raw is not None:
+            parts.append(f"<i>{_html.escape(italic_raw, quote=True)}</i>")
         pos = end
 
     parts.append(_html.escape(text[pos:], quote=True))
     return "".join(parts)
+
+
+def _render_text_block(text: str) -> str:
+    """
+    Render non-code text block, adding support for markdown-like headings.
+    """
+    if not text:
+        return ""
+
+    rendered_lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.endswith("\n"):
+            body = line[:-1]
+            newline = "\n"
+        else:
+            body = line
+            newline = ""
+
+        heading_match = _HEADING_RE.match(body)
+        if heading_match:
+            heading_body = heading_match.group(1)
+            rendered_lines.append(f"<b>{_render_inline_features(heading_body)}</b>")
+        else:
+            rendered_lines.append(_render_inline_features(body))
+
+        rendered_lines.append(newline)
+
+    return "".join(rendered_lines)
 
 
 def render_telegram_html(text: str) -> str:
@@ -123,7 +155,7 @@ def render_telegram_html(text: str) -> str:
 
     for match in _FENCED_CODE_RE.finditer(text):
         start, end = match.span()
-        out.append(_render_inline_features(text[pos:start]))
+        out.append(_render_text_block(text[pos:start]))
         code_raw = match.group(1)
         out.append(
             "<pre><code>"
@@ -132,7 +164,7 @@ def render_telegram_html(text: str) -> str:
         )
         pos = end
 
-    out.append(_render_inline_features(text[pos:]))
+    out.append(_render_text_block(text[pos:]))
     return "".join(out)
 
 

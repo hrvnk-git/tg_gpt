@@ -31,6 +31,13 @@ class RenderSafePartsTests(unittest.TestCase):
         self.assertGreater(len(parts), 1)
         self.assertTrue(all(len(p) <= TELEGRAM_MESSAGE_MAX_CHARS for p in parts))
 
+    def test_heading_and_italic_are_rendered(self) -> None:
+        text = "##1) Базовые команды\n*(в проде осторожно)*"
+        rendered = render_telegram_html(text)
+
+        self.assertIn("<b>1) Базовые команды</b>", rendered)
+        self.assertIn("<i>(в проде осторожно)</i>", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
