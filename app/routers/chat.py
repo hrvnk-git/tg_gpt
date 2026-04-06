@@ -118,7 +118,7 @@ def create_chat_router(
             safe_part = html.escape(part, quote=True)
             await message.answer(
                 safe_part,
-                parse_mode=ParseMode.MARKDOWN_V2
+                parse_mode=ParseMode.HTML
             )
 
         await memory.append(user_id, "assistant", final_text)
