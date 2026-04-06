@@ -40,7 +40,18 @@ def create_chat_router(
     def _guess_audio_filename(file_path: str) -> str:
         p = (file_path or "").strip()
         name = os.path.basename(p)
-        return name or "voice.ogg"
+        if not name:
+            return "voice.ogg"
+
+        low = name.lower()
+        # Telegram voice often comes as `.oga` (Opus in OGG container).
+        # OpenAI expects supported extensions (e.g. `.ogg`), so normalize.
+        if low.endswith(".oga"):
+            return name[: -len(".oga")] + ".ogg"
+        if low.endswith(".opus"):
+            return name[: -len(".opus")] + ".ogg"
+
+        return name
 
     @router.message(CommandStart())
     async def handle_start(message: Message) -> None:
