@@ -33,7 +33,7 @@ async def main() -> None:
 
     bot = Bot(
         token=settings.telegram_token,
-        default=DefaultBotProperties(parse_mode="Markdown"),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
 

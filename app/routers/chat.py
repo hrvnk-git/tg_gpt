@@ -118,7 +118,7 @@ def create_chat_router(
             safe_part = html.escape(part, quote=True)
             await message.answer(
                 safe_part,
-                parse_mode="Markdown",
+                parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
 
