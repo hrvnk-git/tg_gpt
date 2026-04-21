@@ -16,15 +16,21 @@ class Settings:
     openai_api_key: str
     redis_url: str = "redis://localhost:6379/0"
     redis_history_ttl: int = 60 * 60 * 24
+    chat_model: str = "gpt-5.4-nano"
+    vision_model: str = "gpt-5.4-nano"
+    summary_model: str = "gpt-5.4-nano"
+    openai_reasoning_effort: str = "none"
+    openai_store: bool = False
     # Кол-во сообщений, которые реально отправляем в модель (без summary).
-    history_max_messages: int = 20
+    history_max_messages: int = 10
     # Кол-во сообщений, которые храним в Redis до того, как начнём суммаризацию.
-    history_store_messages: int = 60
+    history_store_messages: int = 30
     # Если старых сообщений больше этого порога, генерируем summary и выбрасываем "старое".
     # Если не задан — считаем как (history_store_messages - history_max_messages).
     summary_trigger_messages: int = 0
     # Ограничение размера summary по символам (чтобы не раздувать токены).
     summary_max_chars: int = 1200
+    max_user_input_chars: int = 2000
     rate_limit: int = 5
     rate_window_seconds: int = 30
     system_prompt: str = (
@@ -55,6 +61,18 @@ class Settings:
 
         redis_url = os.getenv("REDIS_URL", defaults.redis_url)
         redis_ttl = int(os.getenv("REDIS_HISTORY_TTL", defaults.redis_history_ttl))
+        chat_model = os.getenv("CHAT_MODEL", defaults.chat_model)
+        vision_model = os.getenv("VISION_MODEL", defaults.vision_model)
+        summary_model = os.getenv("SUMMARY_MODEL", defaults.summary_model)
+        reasoning_effort = os.getenv(
+            "OPENAI_REASONING_EFFORT", defaults.openai_reasoning_effort
+        ).strip()
+        openai_store_env = os.getenv("OPENAI_STORE")
+        openai_store = (
+            defaults.openai_store
+            if openai_store_env is None
+            else openai_store_env.strip().lower() in {"1", "true", "yes", "on"}
+        )
         history_max = int(
             os.getenv("HISTORY_MAX_MESSAGES", defaults.history_max_messages)
         )
@@ -68,6 +86,9 @@ class Settings:
             else (history_store - history_max)
         )
         summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", defaults.summary_max_chars))
+        max_user_input_chars = int(
+            os.getenv("MAX_USER_INPUT_CHARS", defaults.max_user_input_chars)
+        )
         rate_limit = int(os.getenv("RATE_LIMIT", defaults.rate_limit))
         rate_window = int(
             os.getenv("RATE_WINDOW_SECONDS", defaults.rate_window_seconds)
@@ -114,22 +135,34 @@ class Settings:
             raise RuntimeError("SUMMARY_TRIGGER_MESSAGES must be >= 0")
         if summary_max_chars <= 0:
             raise RuntimeError("SUMMARY_MAX_CHARS must be > 0")
+        if max_user_input_chars <= 0:
+            raise RuntimeError("MAX_USER_INPUT_CHARS must be > 0")
         if redis_ttl <= 0:
             raise RuntimeError("REDIS_HISTORY_TTL must be > 0")
         if rate_limit <= 0:
             raise RuntimeError("RATE_LIMIT must be > 0")
         if rate_window <= 0:
             raise RuntimeError("RATE_WINDOW_SECONDS must be > 0")
+        if reasoning_effort not in {"none", "low", "medium", "high", "xhigh"}:
+            raise RuntimeError(
+                "OPENAI_REASONING_EFFORT must be one of: none, low, medium, high, xhigh"
+            )
 
         return cls(
             telegram_token=token,
             openai_api_key=api_key,
             redis_url=redis_url,
             redis_history_ttl=redis_ttl,
+            chat_model=chat_model,
+            vision_model=vision_model,
+            summary_model=summary_model,
+            openai_reasoning_effort=reasoning_effort,
+            openai_store=openai_store,
             history_max_messages=history_max,
             history_store_messages=history_store,
             summary_trigger_messages=summary_trigger,
             summary_max_chars=summary_max_chars,
+            max_user_input_chars=max_user_input_chars,
             rate_limit=rate_limit,
             rate_window_seconds=rate_window,
             system_prompt=prompt,

@@ -29,6 +29,44 @@ def create_chat_router(
 ) -> Router:
     router = Router()
 
+    def _normalize_user_memory_text(text: str, *, fallback: str) -> str:
+        normalized = " ".join((text or "").split()).strip()
+        if not normalized:
+            normalized = fallback
+        return normalized[: settings.max_user_input_chars]
+
+    async def _build_model_history(
+        user_id: int,
+        stored_history: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        messages_only = stored_history[1:]
+        if len(messages_only) <= settings.summary_trigger_messages:
+            summary_for_model = await memory.get_summary(user_id)
+            return memory.build_history(stored_history, summary_for_model)
+
+        cut = len(messages_only) - settings.history_max_messages
+        older = messages_only[:cut]
+
+        existing_summary = await memory.get_summary(user_id)
+        summary_candidate = await ai_client.summarize_messages(
+            system_prompt=settings.system_prompt,
+            messages_to_summarize=older,
+            model=settings.summary_model,
+            max_summary_chars=settings.summary_max_chars,
+            existing_summary=existing_summary,
+            reasoning_effort=settings.openai_reasoning_effort,
+            store=settings.openai_store,
+        )
+        await memory.set_summary(user_id, summary_candidate)
+        recent_for_model = await memory.set_recent_history(user_id)
+
+        summary_for_model = summary_candidate.strip() or existing_summary
+        stored_history_for_model = [
+            {"role": "system", "content": settings.system_prompt},
+            *recent_for_model,
+        ]
+        return memory.build_history(stored_history_for_model, summary_for_model)
+
     def _guess_image_mime(file_path: str) -> str:
         p = (file_path or "").lower()
         if p.endswith(".png"):
@@ -111,46 +149,24 @@ def create_chat_router(
             return
 
         stored_history = await memory.append_and_get_stored_history(
-            user_id, "user", message.text or ""
+            user_id,
+            "user",
+            _normalize_user_memory_text(
+                message.text or "",
+                fallback="Пользователь отправил пустое текстовое сообщение.",
+            ),
         )
-        messages_only = stored_history[1:]
-
-        # Если накопилось слишком много старых сообщений — суммируем выбывающую часть.
-        if len(messages_only) > settings.summary_trigger_messages:
-            cut = len(messages_only) - settings.history_max_messages
-            older = messages_only[:cut]
-            recent = messages_only[-settings.history_max_messages :]
-
-            summary_candidate = await ai_client.summarize_messages(
-                system_prompt=settings.system_prompt,
-                messages_to_summarize=older,
-                max_summary_chars=settings.summary_max_chars,
-            )
-            await memory.set_summary(user_id, summary_candidate)
-            recent_for_model = await memory.set_recent_history(user_id, recent)
-
-            # Если summary-кандидат пустой — не перетираем Redis summary,
-            # но и history должны строиться на основе recent сообщений.
-            if summary_candidate.strip():
-                summary_for_model = summary_candidate.strip()
-            else:
-                summary_for_model = await memory.get_summary(user_id)
-
-            stored_history_for_model = [
-                {"role": "system", "content": settings.system_prompt},
-                *recent_for_model,
-            ]
-            history = memory.build_history(
-                stored_history_for_model, summary_for_model
-            )
-        else:
-            summary_for_model = await memory.get_summary(user_id)
-            history = memory.build_history(stored_history, summary_for_model)
+        history = await _build_model_history(user_id, stored_history)
 
         async with ChatActionSender.typing(
             bot=message.bot, chat_id=message.chat.id
         ):
-            final_text = await ai_client.chat_response(history)
+            final_text = await ai_client.chat_response(
+                history,
+                model=settings.chat_model,
+                reasoning_effort=settings.openai_reasoning_effort,
+                store=settings.openai_store,
+            )
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
         for part in render_safe_parts(final_text, TELEGRAM_MESSAGE_MAX_CHARS):
@@ -200,7 +216,10 @@ def create_chat_router(
         )
 
         caption = (message.caption or "").strip()
-        memory_text = caption if caption else "📷 Фото"
+        memory_text = _normalize_user_memory_text(
+            caption,
+            fallback="Пользователь отправил фото без подписи.",
+        )
 
         image_mime = _guess_image_mime(tg_file.file_path)
         image_b64 = base64.b64encode(file_bytes).decode("utf-8")
@@ -209,35 +228,7 @@ def create_chat_router(
         stored_history = await memory.append_and_get_stored_history(
             user_id, "user", memory_text
         )
-        messages_only = stored_history[1:]
-
-        # If too many old messages accumulated, summarize older part (text-only).
-        if len(messages_only) > settings.summary_trigger_messages:
-            cut = len(messages_only) - settings.history_max_messages
-            older = messages_only[:cut]
-            recent = messages_only[-settings.history_max_messages :]
-
-            summary_candidate = await ai_client.summarize_messages(
-                system_prompt=settings.system_prompt,
-                messages_to_summarize=older,
-                max_summary_chars=settings.summary_max_chars,
-            )
-            await memory.set_summary(user_id, summary_candidate)
-            recent_for_model = await memory.set_recent_history(user_id, recent)
-
-            if summary_candidate.strip():
-                summary_for_model = summary_candidate.strip()
-            else:
-                summary_for_model = await memory.get_summary(user_id)
-
-            stored_history_for_model = [
-                {"role": "system", "content": settings.system_prompt},
-                *recent_for_model,
-            ]
-            history = memory.build_history(stored_history_for_model, summary_for_model)
-        else:
-            summary_for_model = await memory.get_summary(user_id)
-            history = memory.build_history(stored_history, summary_for_model)
+        history = await _build_model_history(user_id, stored_history)
 
         async with ChatActionSender.typing(
             bot=message.bot, chat_id=message.chat.id
@@ -245,6 +236,9 @@ def create_chat_router(
             final_text = await ai_client.chat_response_with_image(
                 messages=history,
                 image_data_url=image_data_url,
+                model=settings.vision_model,
+                reasoning_effort=settings.openai_reasoning_effort,
+                store=settings.openai_store,
             )
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
@@ -305,44 +299,24 @@ def create_chat_router(
             )
 
             if not transcribed_text.strip():
-                transcribed_text = "🗣️ Голос (не удалось распознать дословно)"
+                transcribed_text = "Пользователь отправил голосовое сообщение без распознаваемого текста."
+
+            transcribed_text = _normalize_user_memory_text(
+                transcribed_text,
+                fallback="Пользователь отправил голосовое сообщение.",
+            )
 
             stored_history = await memory.append_and_get_stored_history(
                 user_id, "user", transcribed_text
             )
-            messages_only = stored_history[1:]
+            history = await _build_model_history(user_id, stored_history)
 
-            # Same summarization logic as text/photo (text-only).
-            if len(messages_only) > settings.summary_trigger_messages:
-                cut = len(messages_only) - settings.history_max_messages
-                older = messages_only[:cut]
-                recent = messages_only[-settings.history_max_messages :]
-
-                summary_candidate = await ai_client.summarize_messages(
-                    system_prompt=settings.system_prompt,
-                    messages_to_summarize=older,
-                    max_summary_chars=settings.summary_max_chars,
-                )
-                await memory.set_summary(user_id, summary_candidate)
-                recent_for_model = await memory.set_recent_history(user_id, recent)
-
-                if summary_candidate.strip():
-                    summary_for_model = summary_candidate.strip()
-                else:
-                    summary_for_model = await memory.get_summary(user_id)
-
-                stored_history_for_model = [
-                    {"role": "system", "content": settings.system_prompt},
-                    *recent_for_model,
-                ]
-                history = memory.build_history(
-                    stored_history_for_model, summary_for_model
-                )
-            else:
-                summary_for_model = await memory.get_summary(user_id)
-                history = memory.build_history(stored_history, summary_for_model)
-
-            final_text = await ai_client.chat_response(history)
+            final_text = await ai_client.chat_response(
+                history,
+                model=settings.chat_model,
+                reasoning_effort=settings.openai_reasoning_effort,
+                store=settings.openai_store,
+            )
 
         final_text = final_text.strip() or "🤖 Мне нечего добавить"
         for part in render_safe_parts(final_text, TELEGRAM_MESSAGE_MAX_CHARS):

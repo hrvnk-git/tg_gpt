@@ -25,6 +25,9 @@ class OpenAIClient:
         model: str = "gpt-5.4-nano",
         temperature: float = 0.2,
         max_summary_chars: int = 1200,
+        existing_summary: str = "",
+        reasoning_effort: str = "none",
+        store: bool = False,
     ) -> str:
         # Собираем контент в один текст, чтобы сократить размер input для Responses API.
         # Формат: User/Assistant блоки.
@@ -40,15 +43,18 @@ class OpenAIClient:
                 parts.append(f"User: {content}")
 
         conversation = "\n".join(parts).strip()
-        if not conversation:
+        existing_summary = existing_summary.strip()
+        if not conversation and not existing_summary:
             return ""
 
         prompt = (
-            "Summarize the following conversation into a short, factual summary "
-            "that preserves user preferences, context, and important facts. "
-            "Write in the same language as the conversation. "
-            "Keep it concise.\n\n"
-            f"Conversation:\n{conversation}\n\nSummary:"
+            "Update the conversation summary. Keep only durable context: user "
+            "preferences, ongoing tasks, promised follow-ups, and facts needed "
+            "for future turns. Drop filler and wording details. Write in the same "
+            "language as the conversation. Keep it concise.\n\n"
+            f"Previous summary:\n{existing_summary or '(none)'}\n\n"
+            f"New conversation segment:\n{conversation or '(none)'}\n\n"
+            "Updated summary:"
         )
 
         resp = await self._client.responses.create(
@@ -61,6 +67,8 @@ class OpenAIClient:
                 {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
             ],
             temperature=temperature,
+            reasoning={"effort": reasoning_effort},
+            store=store,
         )
 
         text = self._extract_output_text(resp)
@@ -73,6 +81,8 @@ class OpenAIClient:
         messages: List[Dict[str, Any]],
         model: str = "gpt-5.4-nano",
         temperature: float = 0.6,
+        reasoning_effort: str = "none",
+        store: bool = False,
     ) -> str:
         if not messages:
             return "🤖 Мне нечего добавить"
@@ -99,6 +109,8 @@ class OpenAIClient:
             model=model,
             input=payload,
             temperature=temperature,
+            reasoning={"effort": reasoning_effort},
+            store=store,
         )
 
         # SDK обычно отдаёт output_text; на случай несовпадения версии — пробуем несколько вариантов.
@@ -121,6 +133,8 @@ class OpenAIClient:
         image_data_url: str,
         model: str = "gpt-5.4-nano",
         temperature: float = 0.6,
+        reasoning_effort: str = "none",
+        store: bool = False,
     ) -> str:
         """
         Generate a response conditioned on the provided image.
@@ -177,6 +191,8 @@ class OpenAIClient:
             model=model,
             input=payload,
             temperature=temperature,
+            reasoning={"effort": reasoning_effort},
+            store=store,
         )
 
         text = self._extract_output_text(resp)
